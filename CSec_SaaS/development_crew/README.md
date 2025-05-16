@@ -72,3 +72,33 @@ The `development_crew/` directory contains all code, infrastructure, and documen
 - Architectural Implementation Plan: See `AI Project Development Crew_ Architecture and Implementation Plan.md`
 - Repository Structure: See `repo-structure.md`
 - Original Approach: Based on the Emerging Cybersecurity Threat Finder methodology
+
+### To test the Neo4j connection:
+```bash
+cd development_crew
+python test_connection.py
+```
+This will attempt to connect to Neo4j and report success or failure. If successful, it will show the Neo4j version and the number of nodes in the database.
+
+### Verifying in Neo4j Browser
+After running your demo, you can also verify the created nodes directly in Neo4j Browser:
+
+In Neo4j Desktop, click on "Open" next to your database
+In the Neo4j Browser, enter the following query to see all nodes:
+cypherMATCH (n) RETURN n LIMIT 100
+
+You can also look at specific node types:
+cypherMATCH (a:Agent) RETURN a
+MATCH (d:Domain) RETURN d
+MATCH (p:Project) RETURN p
+
+To visualize the relationships:
+cypherMATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100
+
+
+These queries will show you the data created by your Demo application, confirming that the connection is working and data is being properly stored in Neo4j.
+If you encounter any connection issues, make sure:
+
+Neo4j Desktop has a database running
+Your connection details in the .env file match those in Neo4j Desktop
+There are no firewall issues blocking the connection
