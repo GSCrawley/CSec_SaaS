@@ -8,9 +8,12 @@ implementing the repository pattern for each core entity type.
 import logging
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
+
+from ..utils import convert_neo4j_to_python
 
 from .connection import Neo4jConnection
 from .schema import NodeLabel, RelationshipType, SchemaManager
@@ -126,6 +129,33 @@ class BaseRepository:
             Unique ID string.
         """
         return str(uuid.uuid4())
+        
+    def _convert_neo4j_types(self, data: Dict) -> Dict:
+        """Convert Neo4j types to Python types.
+        
+        Args:
+            data: Dictionary with Neo4j values.
+            
+        Returns:
+            Dictionary with Python values.
+        """
+        result = {}
+        for key, value in data.items():
+            # Convert Neo4j DateTime to Python datetime
+            if hasattr(value, '__class__') and value.__class__.__name__ == 'DateTime':
+                result[key] = datetime(
+                    year=value.year, 
+                    month=value.month, 
+                    day=value.day,
+                    hour=value.hour,
+                    minute=value.minute, 
+                    second=value.second,
+                    microsecond=value.nanosecond // 1000  # Convert nanoseconds to microseconds
+                )
+            else:
+                result[key] = value
+                
+        return result
 
 
 class NodeRepository(BaseRepository):
@@ -161,6 +191,18 @@ class NodeRepository(BaseRepository):
         else:
             data_dict = dict(data)
         
+        # Add ID and timestamps if not present
+        now = self._timestamp()
+        
+        if 'id' not in data_dict:
+            data_dict['id'] = self._generate_id()
+        
+        if 'created_at' not in data_dict:
+            data_dict['created_at'] = now
+        
+        if 'updated_at' not in data_dict:
+            data_dict['updated_at'] = now
+        
         # Validate data against schema
         is_valid, errors = self.schema_manager.validate_entity(self.label, data_dict)
         if not is_valid:
@@ -168,31 +210,38 @@ class NodeRepository(BaseRepository):
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        # Add ID and timestamps if not present
-        if 'id' not in data_dict:
-            data_dict['id'] = self._generate_id()
-        
-        now = self._timestamp()
-        if 'created_at' not in data_dict:
-            data_dict['created_at'] = now
-        if 'updated_at' not in data_dict:
-            data_dict['updated_at'] = now
-        
         # Create node in database
+        # Extract the string value from the Enum if necessary
+        label_str = self.label.value if isinstance(self.label, Enum) else self.label
         query = f"""
-        CREATE (n:{self.label} $props)
-        RETURN n
-        """
+            CREATE (n:{label_str} $props)
+            RETURN n
+            """
         result = self.connection.query(query, {"props": data_dict})
         
-        if result and result[0].get('n'):
-            created_node = result[0]['n']
+        if result and len(result) > 0 and 'n' in result[0]:
+            # Neo4j returns a Node object which we need to convert to a dictionary
+            created_node = dict(result[0]['n'])
+            
+            # Convert Neo4j DateTime objects to Python datetime objects
+            for key, value in created_node.items():
+                if hasattr(value, '__class__') and value.__class__.__name__ == 'DateTime':
+                    created_node[key] = datetime(
+                        year=value.year, 
+                        month=value.month, 
+                        day=value.day,
+                        hour=value.hour,
+                        minute=value.minute, 
+                        second=value.second,
+                        microsecond=value.nanosecond // 1000  # Convert nanoseconds to microseconds
+                    )
+            
+            # Create and return model instance
             return self.model_class(**created_node)
         else:
             error_msg = f"Failed to create {self.label} node"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
-    
     def find_by_id(self, node_id: str) -> Optional[T]:
         """Find node by ID.
         
@@ -202,19 +251,22 @@ class NodeRepository(BaseRepository):
         Returns:
             Node as model instance, or None if not found.
         """
+        label_str = self.label.value if isinstance(self.label, Enum) else self.label
         query = f"""
-        MATCH (n:{self.label} {{id: $id}})
+        MATCH (n:{label_str} {{id: $id}})
         RETURN n
         """
         result = self.connection.query(query, {"id": node_id})
         
         if result and result[0].get('n'):
-            return self.model_class(**result[0]['n'])
+            # Convert Neo4j node to dictionary and convert Neo4j types to Python types
+            node_data = convert_neo4j_to_python(result[0]['n'])
+            return self.model_class(**node_data)
         else:
             return None
     
     def find_by_property(self, property_name: str, property_value: Any) -> List[T]:
-        """Find nodes by property value.
+        """Find nodes by a property value.
         
         Args:
             property_name: Property name.
@@ -223,14 +275,17 @@ class NodeRepository(BaseRepository):
         Returns:
             List of nodes as model instances.
         """
+        # Convert Enum value to string if needed
+        label_str = self.label.value if hasattr(self.label, 'value') else self.label
+        
         query = f"""
-        MATCH (n:{self.label})
+        MATCH (n:{label_str})
         WHERE n.{property_name} = $value
         RETURN n
         """
         result = self.connection.query(query, {"value": property_value})
         
-        return [self.model_class(**record['n']) for record in result if 'n' in record]
+        return [self.model_class(**convert_neo4j_to_python(record['n'])) for record in result if 'n' in record]
     
     def update(self, node_id: str, data: Dict[str, Any]) -> Optional[T]:
         """Update a node.
@@ -260,7 +315,9 @@ class NodeRepository(BaseRepository):
         result = self.connection.query(query, params)
         
         if result and result[0].get('n'):
-            return self.model_class(**result[0]['n'])
+            # Convert Neo4j node to dictionary and convert Neo4j types to Python types
+            node_data = convert_neo4j_to_python(result[0]['n'])
+            return self.model_class(**node_data)
         else:
             return None
     
@@ -300,7 +357,7 @@ class NodeRepository(BaseRepository):
         """
         result = self.connection.query(query)
         
-        return [self.model_class(**record['n']) for record in result if 'n' in record]
+        return [self.model_class(**convert_neo4j_to_python(record['n'])) for record in result if 'n' in record]
     
     def count(self) -> int:
         """Count nodes of this type.
@@ -358,10 +415,15 @@ class RelationshipRepository(BaseRepository):
         if 'created_at' not in properties:
             properties['created_at'] = self._timestamp()
         
+        # Convert Enum objects to string values if needed
+        source_label_str = source_label.value if hasattr(source_label, 'value') else source_label
+        target_label_str = target_label.value if hasattr(target_label, 'value') else target_label
+        relationship_type_str = relationship_type.value if hasattr(relationship_type, 'value') else relationship_type
+        
         query = f"""
-        MATCH (source:{source_label} {{id: $source_id}})
-        MATCH (target:{target_label} {{id: $target_id}})
-        CREATE (source)-[r:{relationship_type} $props]->(target)
+        MATCH (source:{source_label_str} {{id: $source_id}})
+        MATCH (target:{target_label_str} {{id: $target_id}})
+        CREATE (source)-[r:{relationship_type_str} $props]->(target)
         RETURN source, target, r
         """
         
@@ -517,13 +579,18 @@ class ProjectRepository(NodeRepository):
         Returns:
             List of projects.
         """
+        # Convert Enum values to strings
+        project_label = NodeLabel.PROJECT.value if hasattr(NodeLabel.PROJECT, 'value') else NodeLabel.PROJECT
+        belongs_to_rel = RelationshipType.BELONGS_TO.value if hasattr(RelationshipType.BELONGS_TO, 'value') else RelationshipType.BELONGS_TO
+        domain_label = NodeLabel.DOMAIN.value if hasattr(NodeLabel.DOMAIN, 'value') else NodeLabel.DOMAIN
+        
         query = f"""
-        MATCH (p:{NodeLabel.PROJECT})-[:{RelationshipType.BELONGS_TO}]->(d:{NodeLabel.DOMAIN} {{id: $domain_id}})
+        MATCH (p:{project_label})-[:{belongs_to_rel}]->(d:{domain_label} {{id: $domain_id}})
         RETURN p
         """
         result = self.connection.query(query, {"domain_id": domain_id})
         
-        return [ProjectModel(**record['p']) for record in result if 'p' in record]
+        return [ProjectModel(**convert_neo4j_to_python(record['p'])) for record in result if 'p' in record]
 
 
 class ComponentRepository(NodeRepository):
@@ -542,13 +609,18 @@ class ComponentRepository(NodeRepository):
         Returns:
             List of components.
         """
+        # Convert Enum values to strings
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        belongs_to_rel = RelationshipType.BELONGS_TO.value if hasattr(RelationshipType.BELONGS_TO, 'value') else RelationshipType.BELONGS_TO
+        project_label = NodeLabel.PROJECT.value if hasattr(NodeLabel.PROJECT, 'value') else NodeLabel.PROJECT
+        
         query = f"""
-        MATCH (c:{NodeLabel.COMPONENT})-[:{RelationshipType.BELONGS_TO}]->(p:{NodeLabel.PROJECT} {{id: $project_id}})
+        MATCH (c:{component_label})-[:{belongs_to_rel}]->(p:{project_label} {{id: $project_id}})
         RETURN c
         """
         result = self.connection.query(query, {"project_id": project_id})
         
-        return [ComponentModel(**record['c']) for record in result if 'c' in record]
+        return [ComponentModel(**convert_neo4j_to_python(record['c'])) for record in result if 'c' in record]
     
     def find_dependent_components(self, component_id: str) -> List[ComponentModel]:
         """Find components that depend on the specified component.
@@ -559,30 +631,38 @@ class ComponentRepository(NodeRepository):
         Returns:
             List of dependent components.
         """
+        # Convert Enum values to strings
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        depends_on_rel = RelationshipType.DEPENDS_ON.value if hasattr(RelationshipType.DEPENDS_ON, 'value') else RelationshipType.DEPENDS_ON
+        
         query = f"""
-        MATCH (c:{NodeLabel.COMPONENT})-[:{RelationshipType.DEPENDS_ON}]->(target:{NodeLabel.COMPONENT} {{id: $component_id}})
+        MATCH (c:{component_label})-[:{depends_on_rel}]->(target:{component_label} {{id: $component_id}})
         RETURN c
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [ComponentModel(**record['c']) for record in result if 'c' in record]
+        return [ComponentModel(**convert_neo4j_to_python(record['c'])) for record in result if 'c' in record]
     
     def find_dependencies(self, component_id: str) -> List[ComponentModel]:
-        """Find components that the specified component depends on.
+        """Find dependencies of the specified component.
         
         Args:
             component_id: Component ID.
             
         Returns:
-            List of dependency components.
+            List of dependencies.
         """
+        # Convert Enum values to strings
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        depends_on_rel = RelationshipType.DEPENDS_ON.value if hasattr(RelationshipType.DEPENDS_ON, 'value') else RelationshipType.DEPENDS_ON
+        
         query = f"""
-        MATCH (source:{NodeLabel.COMPONENT} {{id: $component_id}})-[:{RelationshipType.DEPENDS_ON}]->(c:{NodeLabel.COMPONENT})
+        MATCH (source:{component_label} {{id: $component_id}})-[:{depends_on_rel}]->(c:{component_label})
         RETURN c
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [ComponentModel(**record['c']) for record in result if 'c' in record]
+        return [ComponentModel(**convert_neo4j_to_python(record['c'])) for record in result if 'c' in record]
 
 
 class RequirementRepository(NodeRepository):
@@ -601,16 +681,21 @@ class RequirementRepository(NodeRepository):
         Returns:
             List of requirements.
         """
+        # Convert Enum values to strings
+        requirement_label = NodeLabel.REQUIREMENT.value if hasattr(NodeLabel.REQUIREMENT, 'value') else NodeLabel.REQUIREMENT
+        belongs_to_rel = RelationshipType.BELONGS_TO.value if hasattr(RelationshipType.BELONGS_TO, 'value') else RelationshipType.BELONGS_TO
+        project_label = NodeLabel.PROJECT.value if hasattr(NodeLabel.PROJECT, 'value') else NodeLabel.PROJECT
+        
         query = f"""
-        MATCH (r:{NodeLabel.REQUIREMENT})-[:{RelationshipType.BELONGS_TO}]->(p:{NodeLabel.PROJECT} {{id: $project_id}})
+        MATCH (r:{requirement_label})-[:{belongs_to_rel}]->(p:{project_label} {{id: $project_id}})
         RETURN r
         """
         result = self.connection.query(query, {"project_id": project_id})
         
-        return [RequirementModel(**record['r']) for record in result if 'r' in record]
+        return [RequirementModel(**convert_neo4j_to_python(record['r'])) for record in result if 'r' in record]
     
     def find_requirements_for_component(self, component_id: str) -> List[RequirementModel]:
-        """Find requirements implemented by a component.
+        """Find requirements implemented by the specified component.
         
         Args:
             component_id: Component ID.
@@ -618,13 +703,18 @@ class RequirementRepository(NodeRepository):
         Returns:
             List of requirements.
         """
+        # Convert Enum values to strings
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        implements_rel = RelationshipType.IMPLEMENTS.value if hasattr(RelationshipType.IMPLEMENTS, 'value') else RelationshipType.IMPLEMENTS
+        requirement_label = NodeLabel.REQUIREMENT.value if hasattr(NodeLabel.REQUIREMENT, 'value') else NodeLabel.REQUIREMENT
+        
         query = f"""
-        MATCH (c:{NodeLabel.COMPONENT} {{id: $component_id}})-[:{RelationshipType.IMPLEMENTS}]->(r:{NodeLabel.REQUIREMENT})
+        MATCH (c:{component_label} {{id: $component_id}})-[:{implements_rel}]->(r:{requirement_label})
         RETURN r
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [RequirementModel(**record['r']) for record in result if 'r' in record]
+        return [RequirementModel(**convert_neo4j_to_python(record['r'])) for record in result if 'r' in record]
 
 
 class ImplementationRepository(NodeRepository):
@@ -643,13 +733,18 @@ class ImplementationRepository(NodeRepository):
         Returns:
             List of implementations.
         """
+        # Convert Enum values to strings
+        implementation_label = NodeLabel.IMPLEMENTATION.value if hasattr(NodeLabel.IMPLEMENTATION, 'value') else NodeLabel.IMPLEMENTATION
+        belongs_to_rel = RelationshipType.BELONGS_TO.value if hasattr(RelationshipType.BELONGS_TO, 'value') else RelationshipType.BELONGS_TO
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        
         query = f"""
-        MATCH (i:{NodeLabel.IMPLEMENTATION})-[:{RelationshipType.BELONGS_TO}]->(c:{NodeLabel.COMPONENT} {{id: $component_id}})
+        MATCH (i:{implementation_label})-[:{belongs_to_rel}]->(c:{component_label} {{id: $component_id}})
         RETURN i
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [ImplementationModel(**record['i']) for record in result if 'i' in record]
+        return [ImplementationModel(**convert_neo4j_to_python(record['i'])) for record in result if 'i' in record]
     
     def find_implementations_for_requirement(self, requirement_id: str) -> List[ImplementationModel]:
         """Find implementations that satisfy a requirement.
@@ -660,13 +755,18 @@ class ImplementationRepository(NodeRepository):
         Returns:
             List of implementations.
         """
+        # Convert Enum values to strings
+        implementation_label = NodeLabel.IMPLEMENTATION.value if hasattr(NodeLabel.IMPLEMENTATION, 'value') else NodeLabel.IMPLEMENTATION
+        satisfies_rel = RelationshipType.SATISFIES.value if hasattr(RelationshipType.SATISFIES, 'value') else RelationshipType.SATISFIES
+        requirement_label = NodeLabel.REQUIREMENT.value if hasattr(NodeLabel.REQUIREMENT, 'value') else NodeLabel.REQUIREMENT
+        
         query = f"""
-        MATCH (i:{NodeLabel.IMPLEMENTATION})-[:{RelationshipType.SATISFIES}]->(r:{NodeLabel.REQUIREMENT} {{id: $requirement_id}})
+        MATCH (i:{implementation_label})-[:{satisfies_rel}]->(r:{requirement_label} {{id: $requirement_id}})
         RETURN i
         """
         result = self.connection.query(query, {"requirement_id": requirement_id})
         
-        return [ImplementationModel(**record['i']) for record in result if 'i' in record]
+        return [ImplementationModel(**convert_neo4j_to_python(record['i'])) for record in result if 'i' in record]
 
 
 class PatternRepository(NodeRepository):
@@ -688,7 +788,7 @@ class PatternRepository(NodeRepository):
         return self.find_by_property("type", pattern_type)
     
     def find_patterns_used_by_component(self, component_id: str) -> List[PatternModel]:
-        """Find patterns used by a component.
+        """Find design patterns used by a component.
         
         Args:
             component_id: Component ID.
@@ -696,13 +796,18 @@ class PatternRepository(NodeRepository):
         Returns:
             List of patterns.
         """
+        # Convert Enum values to strings
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        uses_pattern_rel = RelationshipType.USES_PATTERN.value if hasattr(RelationshipType.USES_PATTERN, 'value') else RelationshipType.USES_PATTERN
+        pattern_label = NodeLabel.PATTERN.value if hasattr(NodeLabel.PATTERN, 'value') else NodeLabel.PATTERN
+        
         query = f"""
-        MATCH (c:{NodeLabel.COMPONENT} {{id: $component_id}})-[:{RelationshipType.USES_PATTERN}]->(p:{NodeLabel.PATTERN})
+        MATCH (c:{component_label} {{id: $component_id}})-[:{uses_pattern_rel}]->(p:{pattern_label})
         RETURN p
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [PatternModel(**record['p']) for record in result if 'p' in record]
+        return [PatternModel(**convert_neo4j_to_python(record['p'])) for record in result if 'p' in record]
 
 
 class DecisionRepository(NodeRepository):
@@ -721,13 +826,18 @@ class DecisionRepository(NodeRepository):
         Returns:
             List of decisions.
         """
+        # Convert Enum values to strings
+        decision_label = NodeLabel.DECISION.value if hasattr(NodeLabel.DECISION, 'value') else NodeLabel.DECISION
+        made_by_rel = RelationshipType.MADE_BY.value if hasattr(RelationshipType.MADE_BY, 'value') else RelationshipType.MADE_BY
+        agent_label = NodeLabel.AGENT.value if hasattr(NodeLabel.AGENT, 'value') else NodeLabel.AGENT
+        
         query = f"""
-        MATCH (d:{NodeLabel.DECISION})-[:{RelationshipType.MADE_BY}]->(a:{NodeLabel.AGENT} {{id: $agent_id}})
+        MATCH (d:{decision_label})-[:{made_by_rel}]->(a:{agent_label} {{id: $agent_id}})
         RETURN d
         """
         result = self.connection.query(query, {"agent_id": agent_id})
         
-        return [DecisionModel(**record['d']) for record in result if 'd' in record]
+        return [DecisionModel(**convert_neo4j_to_python(record['d'])) for record in result if 'd' in record]
     
     def find_decisions_for_component(self, component_id: str) -> List[DecisionModel]:
         """Find decisions related to a component.
@@ -738,13 +848,18 @@ class DecisionRepository(NodeRepository):
         Returns:
             List of decisions.
         """
+        # Convert Enum values to strings
+        decision_label = NodeLabel.DECISION.value if hasattr(NodeLabel.DECISION, 'value') else NodeLabel.DECISION
+        related_to_rel = RelationshipType.RELATED_TO.value if hasattr(RelationshipType.RELATED_TO, 'value') else RelationshipType.RELATED_TO
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        
         query = f"""
-        MATCH (d:{NodeLabel.DECISION})-[:{RelationshipType.RELATED_TO}]->(c:{NodeLabel.COMPONENT} {{id: $component_id}})
+        MATCH (d:{decision_label})-[:{related_to_rel}]->(c:{component_label} {{id: $component_id}})
         RETURN d
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [DecisionModel(**record['d']) for record in result if 'd' in record]
+        return [DecisionModel(**convert_neo4j_to_python(record['d'])) for record in result if 'd' in record]
 
 
 class AgentRepository(NodeRepository):
@@ -777,7 +892,7 @@ class AgentRepository(NodeRepository):
         return self.find_by_property("type", agent_type)
     
     def find_agents_contributing_to_component(self, component_id: str) -> List[AgentModel]:
-        """Find agents contributing to a component.
+        """Find agents that contribute to a component.
         
         Args:
             component_id: Component ID.
@@ -785,10 +900,15 @@ class AgentRepository(NodeRepository):
         Returns:
             List of agents.
         """
+        # Convert Enum values to strings
+        agent_label = NodeLabel.AGENT.value if hasattr(NodeLabel.AGENT, 'value') else NodeLabel.AGENT
+        contributes_to_rel = RelationshipType.CONTRIBUTES_TO.value if hasattr(RelationshipType.CONTRIBUTES_TO, 'value') else RelationshipType.CONTRIBUTES_TO
+        component_label = NodeLabel.COMPONENT.value if hasattr(NodeLabel.COMPONENT, 'value') else NodeLabel.COMPONENT
+        
         query = f"""
-        MATCH (a:{NodeLabel.AGENT})-[:{RelationshipType.CONTRIBUTES_TO}]->(c:{NodeLabel.COMPONENT} {{id: $component_id}})
+        MATCH (a:{agent_label})-[:{contributes_to_rel}]->(c:{component_label} {{id: $component_id}})
         RETURN a
         """
         result = self.connection.query(query, {"component_id": component_id})
         
-        return [AgentModel(**record['a']) for record in result if 'a' in record]
+        return [AgentModel(**convert_neo4j_to_python(record['a'])) for record in result if 'a' in record]

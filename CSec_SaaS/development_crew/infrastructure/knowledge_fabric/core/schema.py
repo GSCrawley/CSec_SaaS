@@ -8,6 +8,7 @@ including node types, relationships, and constraints.
 import logging
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Union
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -88,7 +89,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (d:Domain) ASSERT d.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT domain_id_unique FOR (d:Domain) REQUIRE d.id IS UNIQUE"]
     ),
     
     NodeLabel.PROJECT: NodeSchema(
@@ -102,7 +103,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (p:Project) ASSERT p.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT project_id_unique FOR (p:Project) REQUIRE p.id IS UNIQUE"]
     ),
     
     NodeLabel.COMPONENT: NodeSchema(
@@ -117,7 +118,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (c:Component) ASSERT c.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT component_id_unique FOR (c:Component) REQUIRE c.id IS UNIQUE"]
     ),
     
     NodeLabel.REQUIREMENT: NodeSchema(
@@ -133,7 +134,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (r:Requirement) ASSERT r.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT requirement_id_unique FOR (r:Requirement) REQUIRE r.id IS UNIQUE"]
     ),
     
     NodeLabel.IMPLEMENTATION: NodeSchema(
@@ -149,7 +150,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (i:Implementation) ASSERT i.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT implementation_id_unique FOR (i:Implementation) REQUIRE i.id IS UNIQUE"]
     ),
     
     NodeLabel.PATTERN: NodeSchema(
@@ -163,7 +164,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (p:Pattern) ASSERT p.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT pattern_id_unique FOR (p:Pattern) REQUIRE p.id IS UNIQUE"]
     ),
     
     NodeLabel.DECISION: NodeSchema(
@@ -178,7 +179,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (d:Decision) ASSERT d.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT decision_id_unique FOR (d:Decision) REQUIRE d.id IS UNIQUE"]
     ),
     
     NodeLabel.AGENT: NodeSchema(
@@ -194,7 +195,7 @@ CORE_NODE_SCHEMAS = {
             SchemaProperty(name="created_at", data_type="datetime", required=True),
             SchemaProperty(name="updated_at", data_type="datetime", required=True),
         ],
-        constraints=["CREATE CONSTRAINT ON (a:Agent) ASSERT a.id IS UNIQUE"]
+        constraints=["CREATE CONSTRAINT agent_id_unique FOR (a:Agent) REQUIRE a.id IS UNIQUE"]
     ),
 }
 
@@ -365,23 +366,46 @@ class SchemaManager:
             if node_schema.constraints:
                 for constraint_query in node_schema.constraints:
                     try:
+                        # Update old constraint syntax if needed
+                        if "ASSERT" in constraint_query:
+                            # Extract label and property from old syntax
+                            import re
+                            match = re.search(r'ON \(([a-z]):([A-Za-z]+)\) ASSERT \1\.([a-z_]+) IS UNIQUE', constraint_query)
+                            if match:
+                                var, label, prop = match.groups()
+                                # Form new constraint name
+                                constraint_name = f"{label.lower()}_{prop}_unique"
+                                # Create new constraint syntax
+                                constraint_query = f"CREATE CONSTRAINT {constraint_name} FOR ({var}:{label}) REQUIRE {var}.{prop} IS UNIQUE"
                         self.connection.query(constraint_query)
                         logger.info(f"Created constraint: {constraint_query}")
                     except Exception as e:
                         logger.error(f"Failed to create constraint: {e}")
         
-        # Create indexes for common properties
         index_queries = [
-            "CREATE INDEX ON :Domain(name)",
-            "CREATE INDEX ON :Project(name)",
-            "CREATE INDEX ON :Component(name)",
-            "CREATE INDEX ON :Requirement(name)",
-            "CREATE INDEX ON :Pattern(name)",
-            "CREATE INDEX ON :Agent(name, type)",
+            "CREATE INDEX domain_name_idx IF NOT EXISTS FOR (d:Domain) ON (d.name)",
+            "CREATE INDEX project_name_idx IF NOT EXISTS FOR (p:Project) ON (p.name)",
+            "CREATE INDEX component_name_idx IF NOT EXISTS FOR (c:Component) ON (c.name)",
+            "CREATE INDEX requirement_name_idx IF NOT EXISTS FOR (r:Requirement) ON (r.name)",
+            "CREATE INDEX pattern_name_idx IF NOT EXISTS FOR (p:Pattern) ON (p.name)",
+            "CREATE INDEX agent_info_idx IF NOT EXISTS FOR (a:Agent) ON (a.name, a.type)",
         ]
         
         for query in index_queries:
             try:
+                # Update old index syntax if needed
+                if "CREATE INDEX ON" in query:
+                    # Extract label and properties from old syntax
+                    import re
+                    match = re.search(r'CREATE INDEX ON :([A-Za-z]+)\(([a-z_, ]+)\)', query)
+                    if match:
+                        label, props = match.groups()
+                        # Form new index name
+                        index_name = f"{label.lower()}_{props.replace(', ', '_')}_idx"
+                        # Create new index syntax
+                        var = label[0].lower()
+                        query = f"CREATE INDEX {index_name} IF NOT EXISTS FOR ({var}:{label}) ON ({var}.{props.replace(', ', f', {var}.')})"
+            
                 self.connection.query(query)
                 logger.info(f"Created index: {query}")
             except Exception as e:
@@ -417,7 +441,7 @@ class SchemaManager:
             compound_label = f"{domain_name.replace(' ', '')}{node_type}"
             
             # Create constraint for the new node type
-            constraint_query = f"CREATE CONSTRAINT ON (n:{compound_label}) ASSERT n.id IS UNIQUE"
+            constraint_query = f"CREATE CONSTRAINT {compound_label.lower()}_id_unique FOR (n:{compound_label}) REQUIRE n.id IS UNIQUE"
             try:
                 self.connection.query(constraint_query)
                 logger.info(f"Created constraint for domain-specific node: {compound_label}")
@@ -457,6 +481,14 @@ class SchemaManager:
                     errors.append(f"Property {name} should be a string")
                 elif prop_schema.data_type == "float" and not isinstance(value, (float, int)):
                     errors.append(f"Property {name} should be a number")
+                elif prop_schema.data_type == "datetime" and not isinstance(value, (datetime, str)):
+                    # Allow string representations of datetime
+                    if isinstance(value, str):
+                        try:
+                            # Try to parse the string as datetime
+                            datetime.fromisoformat(value.replace('Z', '+00:00'))
+                        except ValueError:
+                            errors.append(f"Property {name} should be a valid datetime string")
         
         return len(errors) == 0, errors
 
@@ -487,12 +519,12 @@ def create_schema_script() -> str:
     
     # Add indexes
     index_queries = [
-        "CREATE INDEX ON :Domain(name);",
-        "CREATE INDEX ON :Project(name);",
-        "CREATE INDEX ON :Component(name);",
-        "CREATE INDEX ON :Requirement(name);",
-        "CREATE INDEX ON :Pattern(name);",
-        "CREATE INDEX ON :Agent(name, type);"
+        "CREATE INDEX domain_name_idx FOR (d:Domain) ON (d.name);",
+        "CREATE INDEX project_name_idx FOR (p:Project) ON (p.name);",
+        "CREATE INDEX component_name_idx FOR (c:Component) ON (c.name);",
+        "CREATE INDEX requirement_name_idx FOR (r:Requirement) ON (r.name);",
+        "CREATE INDEX pattern_name_idx FOR (p:Pattern) ON (p.name);",
+        "CREATE INDEX agent_info_idx FOR (a:Agent) ON (a.name, a.type);"
     ]
     script_lines.extend(index_queries)
     
