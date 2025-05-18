@@ -1,0 +1,14 @@
+**Genomic System Architecture**  
+
+1\. A software system is defined by its **digital genome containing functional requirements, non functional requirements, and best-practice policies** to predict and manage deviations in its structure and function caused by fluctuations in resource availability, or demand, or **functional changes caused by events.**
+
+2\. The architecture of the system consists of **agents implementing functional requirements, non-functional requirements and best-practice policies**. **All *software components in the system are agents with inputs, a process execution engine and outputs and operate as a component in a society to provide a service with shared knowledg*e.** You can consider each component as a service that receives input and knows what to do based on the input, executes a process defining its purpose and shares output with other components based on shared knowledge. You can consider *each component an agent or a service with API input, process execution knowledge (including where the resources are and how to use them, and know what output to share with whom. Wired nodes fire together to execute system behavior when an event triggers action with input to any node.*
+
+3\. The system is **a collection of agents driven by events** \- ***all components are agents executing functional, nonon-functional requirements and best practice policies***. *For example, the security agent is a non-functional requirement agent. Based on what is observed from an event, another security policy agent will intervene with policy-based action.*
+
+4\. THERE MUST BE AN ‘EVENTS’ NODE WHOSE PURPOSE IS TO KEEP A RECORD IN REAL TIME OF ALL INPUTS, ACTIONS AND THEIR RESULTS (NEW NODES AND RELATIONSHIPS OR CHANGES TO CURRENT NODES AND RELATIONSHIPS)
+
+You are building a society of agents with purpose in their life and the knowledge of the means to execute it. Each agent is autonomous but knows its role in the society. Each agent knows hows how to use resources to accomplish its mission in a society and what to do when input triggers action and who to inform the outcomes. ***There is local memory that facilitates execution of local processes. They all synchronize their local memory with global memory that is stored in a knowledge graph where each component, its attributes and their changes as events change are recorded. This create global associative (semantic) and event-driven interaction history(episodic memory). This is the global brain of the system that is updated in real time by all components which share knowledge in real time.***  This is how human body, brain and mind work.
+
+5\. Replication of software components and containerized process execution engines using cloud resource and a graph model that captures the global memory is all you need to execute any system whose functional, non-functional requirements and best practice policies are specified. 
+
