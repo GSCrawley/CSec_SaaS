@@ -55,6 +55,15 @@ def initialize_knowledge_fabric(config: Optional[Dict[str, Any]] = None) -> Know
     
     logger.info("Successfully connected to Neo4j database.")
     
+    # Get some database info to confirm it's working
+    try:
+        result = connection.query("CALL dbms.components() YIELD name, versions RETURN name, versions")
+        if result:
+            version_info = f"{result[0]['name']} {result[0]['versions'][0]}"
+            logger.info(f"Connected to Neo4j version: {version_info}")
+    except Exception as e:
+        logger.warning(f"Connected but couldn't get version info: {e}")
+    
     # Initialize schema
     schema_manager = SchemaManager(connection)
     schema_manager.initialize_schema(CORE_SCHEMA)
