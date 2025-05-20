@@ -1,7 +1,9 @@
+# See development_crew/docs/next_steps/Current\ progress\ and\ next\ steps.docx.md
+
+
 # Project Overview: Multi-Product Repository
 
-This repository contains two distinct products:
-
+This repository contains two distinct product
 - **Development Crew**: A general-purpose, modular AI agent platform designed to build applications across multiple domains. All platform code, agent implementations, infrastructure, and documentation are located in `development_crew/`.
 - **CSec_SaaS**: A customizable Cybersecurity Incident Response SaaS application, built using the Development Crew platform. All application-specific code and documentation are located in `csec_saas/`.
 
