@@ -7,16 +7,18 @@ implementing the repository pattern for each core entity type.
 
 import logging
 import uuid
+import json
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union, Set
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..utils import convert_neo4j_to_python
 
 from .connection import Neo4jConnection
 from .schema import NodeLabel, RelationshipType, SchemaManager
+from .dual_knowledge import DualKnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,81 @@ class AgentModel(EntityModel):
     status: str
 
 
+class EventModel(EntityModel):
+    """Model for Event nodes in the Digital Genome Architecture."""
+    type: str
+    timestamp: datetime
+    metadata: Optional[Dict[str, Any]] = None
+    context: Optional[Dict[str, Any]] = None
+
+
+class EventSequenceModel(EntityModel):
+    """Model for EventSequence nodes in the Digital Genome Architecture."""
+    name: str
+    event_count: int
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class FunctionalRequirementModel(EntityModel):
+    """Model for FunctionalRequirement nodes in the Digital Genome Architecture."""
+    name: str
+    description: str
+    priority: str
+    status: str
+
+
+class NonFunctionalRequirementModel(EntityModel):
+    """Model for NonFunctionalRequirement nodes in the Digital Genome Architecture."""
+    name: str
+    description: str
+    type: str
+    priority: str
+    status: str
+
+
+class PolicyModel(EntityModel):
+    """Model for Policy nodes in the Digital Genome Architecture."""
+    name: str
+    description: str
+    domain: str
+    enforcement: str
+
+
+class WorkflowModel(EntityModel):
+    """Model for Workflow nodes in the Digital Genome Architecture."""
+    name: str
+    description: str
+    status: str
+
+
+class WorkflowStepModel(EntityModel):
+    """Model for WorkflowStep nodes in the Digital Genome Architecture."""
+    name: str
+    description: str
+    order: int
+    status: str
+
+
+class RedFlagModel(EntityModel):
+    """Model for RedFlag nodes in the Digital Genome Architecture."""
+    type: str
+    description: str
+    severity: str
+    status: str
+    timestamp: datetime
+    resolved_at: Optional[datetime] = None
+
+
+class GenomicAgentModel(EntityModel):
+    """Model for GenomicAgent nodes in the Digital Genome Architecture."""
+    name: str
+    type: str
+    layer: str
+    description: Optional[str] = None
+    status: str
+    policies: Optional[List[str]] = None
+
+
 class RelationshipModel(BaseModel):
     """Model for relationships in the knowledge graph."""
     source_id: str
@@ -161,7 +238,7 @@ class BaseRepository:
 class NodeRepository(BaseRepository):
     """Base repository for node operations."""
     
-    def __init__(self, connection: Neo4jConnection, label: str, model_class: Type[T]):
+    def __init__(self, connection: Neo4jConnection, label: str, model_class: Type[T], dual_knowledge_manager: Optional[DualKnowledgeManager] = None):
         """Initialize node repository.
         
         Args:
@@ -172,8 +249,120 @@ class NodeRepository(BaseRepository):
         super().__init__(connection)
         self.label = label
         self.model_class = model_class
+        self.dual_knowledge_manager = dual_knowledge_manager
+        
+    def create_node(self, label, properties):
+        """Create a node in the graph (adapter for EventsNode compatibility).
+        
+        Args:
+            label: Node label
+            properties: Node properties
+            
+        Returns:
+            ID of created node
+        """
+        # Convert label enum to string if needed
+        if hasattr(label, 'value'):
+            label = label.value
+            
+        # Add required timestamp properties if not present
+        if 'created_at' not in properties:
+            properties['created_at'] = datetime.now()
+        if 'updated_at' not in properties:
+            properties['updated_at'] = datetime.now()
+        if 'id' not in properties:
+            properties['id'] = self._generate_id()
+            
+        # Use the connection's query method as it accepts raw queries
+        query = f"""
+        CREATE (n:{label} $props)
+        RETURN ID(n) as id
+        """
+        
+        result = self.connection.query(query, {"props": properties})
+        return result[0]['id'] if result else None
+        
+    def create_relationship(self, source_id, target_id, relationship_type, properties=None):
+        """Create a relationship between nodes (adapter for EventsNode compatibility).
+        
+        Args:
+            source_id: Source node ID
+            target_id: Target node ID
+            relationship_type: Relationship type
+            properties: Relationship properties
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Convert type enum to string if needed
+        if hasattr(relationship_type, 'value'):
+            relationship_type = relationship_type.value
+            
+        if properties is None:
+            properties = {}
+            
+        query = f"""
+        MATCH (a), (b)
+        WHERE ID(a) = $source_id AND ID(b) = $target_id
+        CREATE (a)-[r:{relationship_type} $props]->(b)
+        RETURN ID(r) as id
+        """
+        
+        params = {
+            "source_id": source_id,
+            "target_id": target_id,
+            "props": properties
+        }
+        
+        result = self.connection.query(query, params)
+        return True if result else False
+        
+    def query(self, query, parameters=None):
+        """Execute a query against the Neo4j database (adapter for AssociativeMemory compatibility).
+        
+        Args:
+            query: Cypher query string
+            parameters: Query parameters
+            
+        Returns:
+            List of query results
+        """
+        return self.connection.query(query, parameters)
+        
+    def update_node(self, node_id, properties):
+        """Update a node with new properties (adapter for AssociativeMemory compatibility).
+        
+        Args:
+            node_id: ID of the node to update
+            properties: Properties to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Ensure we have the updated_at property set
+        if 'updated_at' not in properties:
+            properties['updated_at'] = datetime.now().isoformat()
+            
+        # Build the SET clause for each property
+        set_clauses = [f"n.{key} = ${key}" for key in properties.keys()]
+        set_statement = ", ".join(set_clauses)
+        
+        # Create and execute the query
+        query = f"""
+        MATCH (n)
+        WHERE n.id = $node_id
+        SET {set_statement}
+        RETURN n
+        """
+        
+        # Add node_id to parameters
+        params = {**properties, "node_id": node_id}
+        
+        # Execute the query
+        result = self.connection.query(query, params)
+        return bool(result)
     
-    def create(self, data: Union[Dict[str, Any], T]) -> T:
+    def create(self, data: Union[Dict[str, Any], T], sync_to_shared: bool = False) -> T:
         """Create a new node.
         
         Args:
@@ -199,6 +388,13 @@ class NodeRepository(BaseRepository):
         
         if 'created_at' not in data_dict:
             data_dict['created_at'] = now
+            
+        # Convert Dict metadata/context to JSON strings if present
+        if 'metadata' in data_dict and isinstance(data_dict['metadata'], dict):
+            data_dict['metadata'] = json.dumps(data_dict['metadata'])
+            
+        if 'context' in data_dict and isinstance(data_dict['context'], dict):
+            data_dict['context'] = json.dumps(data_dict['context'])
         
         if 'updated_at' not in data_dict:
             data_dict['updated_at'] = now
@@ -242,6 +438,7 @@ class NodeRepository(BaseRepository):
             error_msg = f"Failed to create {self.label} node"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+    
     def find_by_id(self, node_id: str) -> Optional[T]:
         """Find node by ID.
         
@@ -287,11 +484,11 @@ class NodeRepository(BaseRepository):
         
         return [self.model_class(**convert_neo4j_to_python(record['n'])) for record in result if 'n' in record]
     
-    def update(self, node_id: str, data: Dict[str, Any]) -> Optional[T]:
+    def update(self, entity_id: str, data: Union[Dict[str, Any], T], sync_to_shared: bool = False) -> Optional[T]:
         """Update a node.
         
         Args:
-            node_id: Node ID.
+            entity_id: Node ID.
             data: New node data.
             
         Returns:
@@ -311,7 +508,7 @@ class NodeRepository(BaseRepository):
         RETURN n
         """
         
-        params = {"id": node_id, **data}
+        params = {"id": entity_id, **data}
         result = self.connection.query(query, params)
         
         if result and result[0].get('n'):
@@ -321,11 +518,11 @@ class NodeRepository(BaseRepository):
         else:
             return None
     
-    def delete(self, node_id: str) -> bool:
+    def delete(self, entity_id: str, sync_to_shared: bool = False) -> bool:
         """Delete a node.
         
         Args:
-            node_id: Node ID.
+            entity_id: Node ID.
             
         Returns:
             True if deleted, False if not found.
@@ -335,7 +532,7 @@ class NodeRepository(BaseRepository):
         DETACH DELETE n
         RETURN count(n) as deleted_count
         """
-        result = self.connection.query(query, {"id": node_id})
+        result = self.connection.query(query, {"id": entity_id})
         
         return result[0]['deleted_count'] > 0 if result else False
     
@@ -377,13 +574,14 @@ class NodeRepository(BaseRepository):
 class RelationshipRepository(BaseRepository):
     """Repository for relationship operations."""
     
-    def __init__(self, connection: Neo4jConnection):
+    def __init__(self, connection: Neo4jConnection, dual_knowledge_manager: Optional[DualKnowledgeManager] = None):
         """Initialize relationship repository.
         
         Args:
             connection: Neo4j connection.
         """
         super().__init__(connection)
+        self.dual_knowledge_manager = dual_knowledge_manager
     
     def create_relationship(
         self,
@@ -392,8 +590,9 @@ class RelationshipRepository(BaseRepository):
         target_id: str,
         target_label: str,
         relationship_type: str,
-        properties: Optional[Dict[str, Any]] = None
-    ) -> Dict:
+        properties: Optional[Dict[str, Any]] = None,
+        sync_to_shared: bool = False
+    ) -> str:
         """Create a relationship between two nodes.
         
         Args:
@@ -405,7 +604,7 @@ class RelationshipRepository(BaseRepository):
             properties: Optional relationship properties.
             
         Returns:
-            Dictionary with relationship information.
+            Relationship ID.
             
         Raises:
             ValueError: If source or target node not found.
@@ -424,7 +623,7 @@ class RelationshipRepository(BaseRepository):
         MATCH (source:{source_label_str} {{id: $source_id}})
         MATCH (target:{target_label_str} {{id: $target_id}})
         CREATE (source)-[r:{relationship_type_str} $props]->(target)
-        RETURN source, target, r
+        RETURN id(r) as relationship_id
         """
         
         params = {
@@ -441,12 +640,7 @@ class RelationshipRepository(BaseRepository):
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        return {
-            "source": result[0]['source'],
-            "target": result[0]['target'],
-            "relationship": result[0]['r'],
-            "type": relationship_type
-        }
+        return result[0]['relationship_id']
     
     def find_relationships(
         self,

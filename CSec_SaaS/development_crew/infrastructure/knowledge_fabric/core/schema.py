@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class NodeLabel(str, Enum):
     """Core node labels in the knowledge graph."""
+    # Original labels
     DOMAIN = "Domain"
     PROJECT = "Project"
     COMPONENT = "Component"
@@ -27,10 +28,23 @@ class NodeLabel(str, Enum):
     PATTERN = "Pattern" 
     DECISION = "Decision"
     AGENT = "Agent"
+    
+    # Digital Genome Architecture labels
+    EVENT = "Event"
+    EVENT_SEQUENCE = "EventSequence"
+    FUNCTIONAL_REQUIREMENT = "FunctionalRequirement"
+    NON_FUNCTIONAL_REQUIREMENT = "NonFunctionalRequirement"
+    POLICY = "Policy"
+    WORKFLOW = "Workflow"
+    WORKFLOW_STEP = "WorkflowStep"
+    RED_FLAG = "RedFlag"
+    GENOMIC_AGENT = "GenomicAgent"
+    MEMORY = "Memory"
 
 
 class RelationshipType(str, Enum):
     """Core relationship types in the knowledge graph."""
+    # Original types
     BELONGS_TO = "BELONGS_TO"
     DEPENDS_ON = "DEPENDS_ON"
     IMPLEMENTS = "IMPLEMENTS"
@@ -39,6 +53,17 @@ class RelationshipType(str, Enum):
     SATISFIES = "SATISFIES"
     CONTRIBUTES_TO = "CONTRIBUTES_TO"
     RELATED_TO = "RELATED_TO"
+    
+    # Digital Genome Architecture types
+    TRIGGERS = "TRIGGERS"
+    GOVERNED_BY = "GOVERNED_BY"
+    NEXT_STEP = "NEXT_STEP"
+    DETECTED_BY = "DETECTED_BY"
+    CONTAINS = "CONTAINS"
+    CREATED_BY = "CREATED_BY"
+    SYNCHRONIZED_WITH = "SYNCHRONIZED_WITH"
+    RESPONDS_TO = "RESPONDS_TO"
+    ASSOCIATED_WITH = "ASSOCIATED_WITH"
 
 
 class SchemaProperty(BaseModel):
@@ -334,11 +359,317 @@ CORE_RELATIONSHIP_SCHEMAS = {
     ),
 }
 
+# Add Digital Genome Architecture node schemas
+GENOMIC_NODE_SCHEMAS = {
+    NodeLabel.MEMORY: NodeSchema(
+        label=NodeLabel.MEMORY,
+        description="Stored memories in the associative memory system",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="content", data_type="string", required=True),
+            SchemaProperty(name="context", data_type="string", required=True),
+            SchemaProperty(name="memory_type", data_type="string", required=True),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+            SchemaProperty(name="importance", data_type="float", required=True),
+            SchemaProperty(name="last_accessed", data_type="datetime", required=True),
+            SchemaProperty(name="access_count", data_type="integer", required=True),
+            SchemaProperty(name="associations", data_type="string", required=False),
+        ],
+        constraints=["CREATE CONSTRAINT memory_id_unique FOR (m:Memory) REQUIRE m.id IS UNIQUE"]
+    ),
+    NodeLabel.EVENT: NodeSchema(
+        label=NodeLabel.EVENT,
+        description="System events with temporal and associative properties",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="type", data_type="string", required=True),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+            SchemaProperty(name="metadata", data_type="string", required=False),
+            SchemaProperty(name="context", data_type="string", required=False),
+        ],
+        constraints=["CREATE CONSTRAINT event_id_unique FOR (e:Event) REQUIRE e.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.EVENT_SEQUENCE: NodeSchema(
+        label=NodeLabel.EVENT_SEQUENCE,
+        description="Ordered sequence of related events",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="event_count", data_type="integer", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="metadata", data_type="string", required=False),
+        ],
+        constraints=["CREATE CONSTRAINT event_sequence_id_unique FOR (es:EventSequence) REQUIRE es.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.FUNCTIONAL_REQUIREMENT: NodeSchema(
+        label=NodeLabel.FUNCTIONAL_REQUIREMENT,
+        description="System capabilities that must be implemented",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="priority", data_type="string", required=True),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT functional_req_id_unique FOR (fr:FunctionalRequirement) REQUIRE fr.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.NON_FUNCTIONAL_REQUIREMENT: NodeSchema(
+        label=NodeLabel.NON_FUNCTIONAL_REQUIREMENT,
+        description="Quality attributes and constraints",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="type", data_type="string", required=True),
+            SchemaProperty(name="priority", data_type="string", required=True),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT non_functional_req_id_unique FOR (nfr:NonFunctionalRequirement) REQUIRE nfr.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.POLICY: NodeSchema(
+        label=NodeLabel.POLICY,
+        description="Best practices and governance rules",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="domain", data_type="string", required=True),
+            SchemaProperty(name="enforcement", data_type="string", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT policy_id_unique FOR (p:Policy) REQUIRE p.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.WORKFLOW: NodeSchema(
+        label=NodeLabel.WORKFLOW,
+        description="End-to-end process definitions",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT workflow_id_unique FOR (w:Workflow) REQUIRE w.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.WORKFLOW_STEP: NodeSchema(
+        label=NodeLabel.WORKFLOW_STEP,
+        description="Individual steps in a workflow",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="order", data_type="integer", required=True),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT workflow_step_id_unique FOR (ws:WorkflowStep) REQUIRE ws.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.RED_FLAG: NodeSchema(
+        label=NodeLabel.RED_FLAG,
+        description="System anomalies and issues requiring attention",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="type", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=True),
+            SchemaProperty(name="severity", data_type="string", required=True),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+            SchemaProperty(name="resolved_at", data_type="datetime", required=False),
+        ],
+        constraints=["CREATE CONSTRAINT red_flag_id_unique FOR (rf:RedFlag) REQUIRE rf.id IS UNIQUE"]
+    ),
+    
+    NodeLabel.GENOMIC_AGENT: NodeSchema(
+        label=NodeLabel.GENOMIC_AGENT,
+        description="Self-regulating agent with enhanced cognitive capabilities",
+        properties=[
+            SchemaProperty(name="id", data_type="string", required=True),
+            SchemaProperty(name="name", data_type="string", required=True),
+            SchemaProperty(name="type", data_type="string", required=True),
+            SchemaProperty(name="layer", data_type="string", required=True),
+            SchemaProperty(name="description", data_type="string", required=False),
+            SchemaProperty(name="status", data_type="string", required=True),
+            SchemaProperty(name="policies", data_type="string", required=False),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=True),
+        ],
+        constraints=["CREATE CONSTRAINT genomic_agent_id_unique FOR (ga:GenomicAgent) REQUIRE ga.id IS UNIQUE"]
+    ),
+}
+
+# Add Digital Genome Architecture relationship schemas
+GENOMIC_RELATIONSHIP_SCHEMAS = {
+    RelationshipType.ASSOCIATED_WITH: RelationshipSchema(
+        type=RelationshipType.ASSOCIATED_WITH,
+        description="Links memories that are associated with each other",
+        source_labels=[
+            NodeLabel.MEMORY.value
+        ],
+        target_labels=[
+            NodeLabel.MEMORY.value
+        ],
+        properties=[
+            SchemaProperty(name="strength", data_type="float", required=True),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+            SchemaProperty(name="updated_at", data_type="datetime", required=False),
+        ]
+    ),
+    RelationshipType.TRIGGERS: RelationshipSchema(
+        type=RelationshipType.TRIGGERS,
+        description="Shows how events trigger other events or actions",
+        source_labels=[
+            NodeLabel.EVENT.value,
+            NodeLabel.RED_FLAG.value
+        ],
+        target_labels=[
+            NodeLabel.EVENT.value,
+            NodeLabel.WORKFLOW.value,
+            NodeLabel.WORKFLOW_STEP.value
+        ],
+        properties=[
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+            SchemaProperty(name="context", data_type="string", required=False),
+        ]
+    ),
+    
+    RelationshipType.GOVERNED_BY: RelationshipSchema(
+        type=RelationshipType.GOVERNED_BY,
+        description="Links entities to their governing policies",
+        source_labels=[
+            NodeLabel.GENOMIC_AGENT.value,
+            NodeLabel.WORKFLOW.value,
+            NodeLabel.FUNCTIONAL_REQUIREMENT.value,
+            NodeLabel.NON_FUNCTIONAL_REQUIREMENT.value
+        ],
+        target_labels=[
+            NodeLabel.POLICY.value
+        ],
+        properties=[
+            SchemaProperty(name="compliance_level", data_type="float", required=False),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+        ]
+    ),
+    
+    RelationshipType.NEXT_STEP: RelationshipSchema(
+        type=RelationshipType.NEXT_STEP,
+        description="Defines sequence of workflow steps",
+        source_labels=[
+            NodeLabel.WORKFLOW_STEP.value
+        ],
+        target_labels=[
+            NodeLabel.WORKFLOW_STEP.value
+        ],
+        properties=[
+            SchemaProperty(name="condition", data_type="string", required=False),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+        ]
+    ),
+    
+    RelationshipType.DETECTED_BY: RelationshipSchema(
+        type=RelationshipType.DETECTED_BY,
+        description="Links red flags to detecting agent or mechanism",
+        source_labels=[
+            NodeLabel.RED_FLAG.value
+        ],
+        target_labels=[
+            NodeLabel.GENOMIC_AGENT.value,
+            NodeLabel.COMPONENT.value
+        ],
+        properties=[
+            SchemaProperty(name="detection_method", data_type="string", required=False),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+        ]
+    ),
+    
+    RelationshipType.CONTAINS: RelationshipSchema(
+        type=RelationshipType.CONTAINS,
+        description="Shows containment relationships",
+        source_labels=[
+            NodeLabel.EVENT_SEQUENCE.value,
+            NodeLabel.WORKFLOW.value
+        ],
+        target_labels=[
+            NodeLabel.EVENT.value,
+            NodeLabel.WORKFLOW_STEP.value
+        ],
+        properties=[
+            SchemaProperty(name="order", data_type="integer", required=False),
+            SchemaProperty(name="created_at", data_type="datetime", required=True),
+        ]
+    ),
+    
+    RelationshipType.CREATED_BY: RelationshipSchema(
+        type=RelationshipType.CREATED_BY,
+        description="Links events to their originating agent",
+        source_labels=[
+            NodeLabel.EVENT.value
+        ],
+        target_labels=[
+            NodeLabel.GENOMIC_AGENT.value,
+            NodeLabel.AGENT.value
+        ],
+        properties=[
+            SchemaProperty(name="context", data_type="string", required=False),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+        ]
+    ),
+    
+    RelationshipType.SYNCHRONIZED_WITH: RelationshipSchema(
+        type=RelationshipType.SYNCHRONIZED_WITH,
+        description="Links individual knowledge graphs with shared knowledge fabric",
+        source_labels=[
+            NodeLabel.GENOMIC_AGENT.value
+        ],
+        target_labels=[
+            NodeLabel.DOMAIN.value
+        ],
+        properties=[
+            SchemaProperty(name="last_sync", data_type="datetime", required=True),
+            SchemaProperty(name="sync_status", data_type="string", required=True),
+        ]
+    ),
+    
+    RelationshipType.RESPONDS_TO: RelationshipSchema(
+        type=RelationshipType.RESPONDS_TO,
+        description="Links agents to events they respond to",
+        source_labels=[
+            NodeLabel.GENOMIC_AGENT.value,
+            NodeLabel.AGENT.value
+        ],
+        target_labels=[
+            NodeLabel.EVENT.value,
+            NodeLabel.RED_FLAG.value
+        ],
+        properties=[
+            SchemaProperty(name="response_type", data_type="string", required=False),
+            SchemaProperty(name="timestamp", data_type="datetime", required=True),
+        ]
+    ),
+}
+
+# Merge original schemas with genomic schemas
+ALL_NODE_SCHEMAS = {**CORE_NODE_SCHEMAS, **GENOMIC_NODE_SCHEMAS}
+ALL_RELATIONSHIP_SCHEMAS = {**CORE_RELATIONSHIP_SCHEMAS, **GENOMIC_RELATIONSHIP_SCHEMAS}
+
 # Create the core schema
 CORE_SCHEMA = KnowledgeGraphSchema(
-    nodes=CORE_NODE_SCHEMAS,
-    relationships=CORE_RELATIONSHIP_SCHEMAS,
-    description="Core schema for the Development Crew knowledge graph"
+    nodes=ALL_NODE_SCHEMAS,
+    relationships=ALL_RELATIONSHIP_SCHEMAS,
+    description="Extended schema for the Development Crew Digital Genome Architecture"
 )
 
 
@@ -383,12 +714,24 @@ class SchemaManager:
                         logger.error(f"Failed to create constraint: {e}")
         
         index_queries = [
+            # Original indices
             "CREATE INDEX domain_name_idx IF NOT EXISTS FOR (d:Domain) ON (d.name)",
             "CREATE INDEX project_name_idx IF NOT EXISTS FOR (p:Project) ON (p.name)",
             "CREATE INDEX component_name_idx IF NOT EXISTS FOR (c:Component) ON (c.name)",
             "CREATE INDEX requirement_name_idx IF NOT EXISTS FOR (r:Requirement) ON (r.name)",
             "CREATE INDEX pattern_name_idx IF NOT EXISTS FOR (p:Pattern) ON (p.name)",
             "CREATE INDEX agent_info_idx IF NOT EXISTS FOR (a:Agent) ON (a.name, a.type)",
+            
+            # Digital Genome Architecture indices
+            "CREATE INDEX event_type_idx IF NOT EXISTS FOR (e:Event) ON (e.type)",
+            "CREATE INDEX event_timestamp_idx IF NOT EXISTS FOR (e:Event) ON (e.timestamp)",
+            "CREATE INDEX workflow_status_idx IF NOT EXISTS FOR (w:Workflow) ON (w.status)",
+            "CREATE INDEX red_flag_severity_idx IF NOT EXISTS FOR (rf:RedFlag) ON (rf.severity, rf.status)",
+            "CREATE INDEX policy_domain_idx IF NOT EXISTS FOR (p:Policy) ON (p.domain)",
+            "CREATE INDEX genomic_agent_info_idx IF NOT EXISTS FOR (ga:GenomicAgent) ON (ga.name, ga.type, ga.layer)",
+            "CREATE INDEX memory_type_idx IF NOT EXISTS FOR (m:Memory) ON (m.memory_type)",
+            "CREATE INDEX memory_importance_idx IF NOT EXISTS FOR (m:Memory) ON (m.importance)",
+            "CREATE INDEX memory_timestamp_idx IF NOT EXISTS FOR (m:Memory) ON (m.timestamp)",
         ]
         
         for query in index_queries:

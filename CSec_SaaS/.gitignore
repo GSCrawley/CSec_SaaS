@@ -1,0 +1,24 @@
+# # Development Crew
+development_crew/.env
+
+# # CSec SaaS
+csec_saas/.env
+
+# Virtual environment
+venv/
+.venv/
+/venv/
+
+.env
+.env.example
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+repomix-output.md
+
+# Other
+# *.*
