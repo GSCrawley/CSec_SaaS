@@ -1,5 +1,7 @@
 # **Development Crew Enhancement Opportunities**
 
+Note - the ideas in this documemt are for consideration after the initial genomic system development crew is operational. Please ignore it until then.
+
 ## **Strategic Focus Enhancement**
 
 Today's product teams need to prioritize strategic goals over reactive feedback. While our Development Crew architecture includes an Orchestration Layer with the Project Manager Agent to coordinate workflows, we can enhance this further:
