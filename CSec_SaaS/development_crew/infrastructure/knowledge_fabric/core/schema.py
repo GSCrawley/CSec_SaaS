@@ -40,6 +40,12 @@ class NodeLabel(str, Enum):
     RED_FLAG = "RedFlag"
     GENOMIC_AGENT = "GenomicAgent"
     MEMORY = "Memory"
+    
+    # Dual Knowledge Manager labels
+    DKM_MANAGED_KG = "DKM_ManagedKG"
+    DKM_SYNCHRONIZATION_RULE = "DKM_SynchronizationRule"
+    DKM_SCHEMA_MAPPING = "DKM_SchemaMapping"
+    DKM_KNOWLEDGE_POLICY = "DKM_KnowledgePolicy"
 
 
 class RelationshipType(str, Enum):
@@ -64,6 +70,13 @@ class RelationshipType(str, Enum):
     SYNCHRONIZED_WITH = "SYNCHRONIZED_WITH"
     RESPONDS_TO = "RESPONDS_TO"
     ASSOCIATED_WITH = "ASSOCIATED_WITH"
+    
+    # Dual Knowledge Manager relationship types
+    SYNCS_WITH = "SYNCS_WITH"
+    SYNCS_TO = "SYNCS_TO"
+    APPLIES_TO = "APPLIES_TO"
+    MAPS_BETWEEN = "MAPS_BETWEEN"
+    GOVERNS = "GOVERNS"
 
 
 class SchemaProperty(BaseModel):
